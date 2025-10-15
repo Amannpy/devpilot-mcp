@@ -30,3 +30,10 @@ nano .env
 ```bash
 source venv/bin/activate
 python src/server.py
+```
+
+7. **Run tests:**
+```bash
+chmod +x scripts/run_tests.sh
+./scripts/run_tests.sh
+```
