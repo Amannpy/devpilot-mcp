@@ -1,37 +1,34 @@
+# tests/test_server.py
+import pytest
 from src.server import DeveloperWorkflowServer
-import asyncio
 
-async def main():
-    server = DeveloperWorkflowServer()
-    print("✅ Server initialized.")
-
-    # --- Test complexity analysis ---
+@pytest.mark.asyncio
+async def test_analyze_complexity(server):
     code_snippet = """
 def foo(x):
     if x > 5:
         print("hi")
     return x
 """
-    complexity_result = await server.analyze_complexity(code_snippet)
-    print("🔍 analyze_complexity output:")
-    print(complexity_result)
+    result = await server.analyze_complexity(code_snippet)
+    assert "complexity_score" in result
+    assert result["metrics"]["functions"] == 1
 
-    # --- Test bug detection ---
+@pytest.mark.asyncio
+async def test_detect_bugs(server):
     buggy_code = 'password = "1234"\nprint("debug")'
-    bug_result = await server.detect_bugs(buggy_code, 'all')
-    print("🐞 detect_bugs output:")
-    print(bug_result)
+    result = await server.detect_bugs(buggy_code, 'all')
+    assert result["bugs_found"] >= 1
 
-    # --- Test documentation generation (mock HF call) ---
-    # Temporarily disable HF inference for local testing
+@pytest.mark.asyncio
+async def test_generate_documentation(server):
     server.hf_client.text_generation = lambda *args, **kwargs: "Mocked documentation output"
-    doc_result = await server.generate_documentation("def add(a, b): return a + b", "markdown")
-    print("📘 generate_documentation output:")
-    print(doc_result)
+    result = await server.generate_documentation("def add(a, b): return a + b", "markdown")
+    assert "documentation" in result
+    assert "add" in result["entities_documented"]
 
-    # --- Test test-generation (mock HF call) ---
-    test_result = await server.generate_tests("def add(a, b): return a + b", "pytest")
-    print("🧪 generate_tests output:")
-    print(test_result)
-
-asyncio.run(main())
+@pytest.mark.asyncio
+async def test_generate_tests(server):
+    server.hf_client.text_generation = lambda *args, **kwargs: "Mocked test output"
+    result = await server.generate_tests("def add(a, b): return a + b", "pytest")
+    assert "test_code" in result
