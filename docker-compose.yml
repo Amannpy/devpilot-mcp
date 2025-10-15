@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  mcp-server:
+    build: .
+    container_name: mcp-ai-dev-server
+    environment:
+      - HUGGINGFACE_API_TOKEN=${HUGGINGFACE_API_TOKEN}
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    driver: bridge
