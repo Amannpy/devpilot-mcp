@@ -54,3 +54,5 @@ Thumbs.db
 # Project specific
 cache/
 temp/
+
+models_cache/
