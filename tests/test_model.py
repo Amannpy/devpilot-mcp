@@ -3,6 +3,7 @@ Tests for Qwen model integration
 """
 
 import pytest
+from datetime import timedelta  # <-- add this
 from unittest.mock import AsyncMock, patch
 from src.models import QwenModel, ModelManager, ModelCache
 
@@ -27,7 +28,11 @@ class TestModelCache:
     def test_cache_expiration(self):
         cache = ModelCache(ttl_minutes=0)
         cache.set("temp", "data")
-        cache.cache["temp"]["time"] -= 61  # simulate time passing
+
+        # Simulate time passing — adjust the stored timestamp backward
+        value, timestamp = cache.cache["temp"]
+        cache.cache["temp"] = (value, timestamp - timedelta(minutes=61))
+
         assert cache.get("temp") is None
 
     def test_cache_clear(self):

@@ -5,6 +5,7 @@ Robust Qwen2.5 integration for MCP Developer Workflow
 - Fallback: Hugging Face Inference API only if local transformers are not available
 - Caching for tokenization, model outputs, and embeddings
 - Async-safe (uses asyncio.to_thread for blocking calls)
+- Exposes QwenModel wrapper and ModelManager for tests and application code
 """
 
 import asyncio
@@ -44,23 +45,41 @@ class ModelCache:
         self.ttl = timedelta(minutes=ttl_minutes)
 
     def get(self, key: str) -> Optional[Any]:
+        """Return cached value if not expired."""
         item = self.cache.get(key)
         if not item:
             return None
-        value, ts = item
+        try:
+            value, ts = item
+        except Exception:
+            # defensive fallback — corrupted entry, remove it
+            try:
+                del self.cache[key]
+            except KeyError:
+                pass
+            return None
+
         if datetime.now() - ts > self.ttl:
-            del self.cache[key]
+            try:
+                del self.cache[key]
+            except KeyError:
+                pass
             return None
         return value
 
     def set(self, key: str, value: Any):
+        """Insert or update cache entry with timestamp."""
         if len(self.cache) >= self.max_size:
             oldest = min(self.cache.items(), key=lambda kv: kv[1][1])[0]
-            del self.cache[oldest]
+            try:
+                del self.cache[oldest]
+            except KeyError:
+                pass
         self.cache[key] = (value, datetime.now())
 
     def clear(self):
         self.cache.clear()
+
 
 # ---------------------------
 # Model singleton + caches
@@ -98,13 +117,17 @@ def _ensure_qwen_loaded():
         raise RuntimeError("Transformers not available for local Qwen2.5.")
     if _local.qwen_model is None:
         logger.info("Loading local Qwen2.5 model...")
-        _local.qwen_tokenizer = AutoTokenizer.from_pretrained(config.huggingface.model_qwen, cache_dir=config.huggingface.model_cache_dir)
+        _local.qwen_tokenizer = AutoTokenizer.from_pretrained(
+            config.huggingface.model_qwen,
+            cache_dir=config.huggingface.model_cache_dir
+        )
         dtype = _torch_dtype()
         device_map = "auto" if torch.cuda.is_available() else None
         _local.qwen_model = AutoModelForCausalLM.from_pretrained(
             config.huggingface.model_qwen,
             torch_dtype=dtype if dtype is not None else None,
-            device_map=device_map
+            device_map=device_map,
+            cache_dir=config.huggingface.model_cache_dir
         )
         _local.qwen_model.eval()
         logger.info("✅ Local Qwen2.5 ready.")
@@ -130,6 +153,7 @@ async def get_qwen_embeddings(text: str) -> Optional[List[float]]:
     if cached:
         return cached
 
+    # Prefer local model
     if TRANSFORMERS_AVAILABLE:
         try:
             _ensure_qwen_loaded()
@@ -145,8 +169,23 @@ async def get_qwen_embeddings(text: str) -> Optional[List[float]]:
             def _run():
                 with torch.no_grad():
                     outputs = _local.qwen_model(**tokenized)
-                    # mean pooling on last hidden state
-                    emb_tensor = outputs.last_hidden_state.mean(dim=1).squeeze(0)
+                    # If model returns logits / hidden states, try to access last_hidden_state
+                    emb_tensor = None
+                    if hasattr(outputs, "last_hidden_state"):
+                        emb_tensor = outputs.last_hidden_state.mean(dim=1).squeeze(0)
+                    elif isinstance(outputs, tuple) and len(outputs) > 0 and hasattr(outputs[0], "mean"):
+                        # fallback but unlikely
+                        emb_tensor = outputs[0].mean(dim=1).squeeze(0)
+                    else:
+                        # As a last resort, convert logits to a small vector (not ideal)
+                        try:
+                            logits = outputs.logits if hasattr(outputs, "logits") else None
+                            if logits is not None:
+                                emb_tensor = logits.mean(dim=1).squeeze(0)
+                        except Exception:
+                            emb_tensor = None
+                    if emb_tensor is None:
+                        raise RuntimeError("Unable to extract embedding from model outputs.")
                     return emb_tensor.cpu().tolist()
 
             embeddings = await asyncio.to_thread(_run)
@@ -155,6 +194,7 @@ async def get_qwen_embeddings(text: str) -> Optional[List[float]]:
         except Exception as e:
             logger.warning("Local Qwen2.5 embedding failed (%s), will try HF fallback.", e)
 
+    # HF Inference API fallback (if configured)
     client = _hf_client()
     if client:
         try:
@@ -180,7 +220,7 @@ def _embed_summary_signal(embeddings: Optional[List[float]]) -> str:
     if not embeddings:
         return ""
     import math
-    norm = math.sqrt(sum(x*x for x in embeddings)/max(1,len(embeddings)))
+    norm = math.sqrt(sum(x * x for x in embeddings) / max(1, len(embeddings)))
     return f"(semantic_score:{norm:.3f})"
 
 def _build_prompt_for(task_type: str, code: str, embed_signal: str) -> str:
@@ -292,20 +332,25 @@ async def generate_text(prompt: str, task_type: str = "general", embeddings: Opt
     return ""
 
 # ---------------------------
-# ModelManager
+# QwenModel wrapper (lightweight API for tests & app)
 # ---------------------------
-class ModelManager:
-    def __init__(self):
-        logger.info("Initializing ModelManager...")
-        self.embedding_cache = _embedding_cache
-        self.token_cache = _token_cache
-        self.output_cache = _output_cache
-        logger.info("ModelManager ready.")
+class QwenModel:
+    """
+    Lightweight wrapper around Qwen capabilities.
 
-    async def get_code_embeddings(self, code: str) -> Optional[List[float]]:
-        return await get_qwen_embeddings(code)
+    - get_embeddings(text): async -> Optional[List[float]]
+    - generate_text(prompt, ...): async -> str
+    - analyze_code(code): async -> dict (uses embeddings + generation to produce interpretation)
+    """
+
+    async def get_embeddings(self, text: str) -> Optional[List[float]]:
+        return await get_qwen_embeddings(text)
+
+    async def generate_text(self, prompt: str, task_type: str = "general", embeddings: Optional[List[float]] = None, max_new_tokens: int = 300) -> str:
+        return await generate_text(prompt, task_type=task_type, embeddings=embeddings, max_new_tokens=max_new_tokens)
 
     async def analyze_code(self, code: str) -> Dict[str, Any]:
+        # Basic pattern extraction (same as ModelManager uses)
         patterns = {
             "functions": len(re.findall(r'\bdef\s+\w+\s*\(', code)),
             "classes": len(re.findall(r'\bclass\s+\w+', code)),
@@ -318,13 +363,15 @@ class ModelManager:
                 "loops": code.count('for ') + code.count('while '),
             }
         }
-        embeddings = await self.get_code_embeddings(code)
+
+        embeddings = await self.get_embeddings(code)
         analysis_text = None
         if embeddings:
             try:
-                analysis_text = await generate_text(code, task_type="general", embeddings=embeddings, max_new_tokens=200)
+                # Use Qwen to produce a short interpretation (non-blocking)
+                analysis_text = await self.generate_text(code, task_type="general", embeddings=embeddings, max_new_tokens=200)
             except Exception as e:
-                logger.warning("Interpretation generation failed: %s", e)
+                logger.warning("QwenModel.analysis generation failed: %s", e)
 
         if not analysis_text:
             parts = []
@@ -343,17 +390,38 @@ class ModelManager:
             "timestamp": datetime.now().isoformat()
         }
 
+# ---------------------------
+# ModelManager
+# ---------------------------
+class ModelManager:
+    def __init__(self):
+        logger.info("Initializing ModelManager...")
+        # public caches for external control
+        self.embedding_cache = _embedding_cache
+        self.token_cache = _token_cache
+        self.output_cache = _output_cache
+        # expose a QwenModel instance for tests and other modules
+        self.qwen = QwenModel()
+        logger.info("ModelManager ready.")
+
+    async def get_code_embeddings(self, code: str) -> Optional[List[float]]:
+        return await self.qwen.get_embeddings(code)
+
+    async def analyze_code(self, code: str) -> Dict[str, Any]:
+        return await self.qwen.analyze_code(code)
+
     async def generate_review(self, code: str, language: str = "python") -> str:
         embeddings = await self.get_code_embeddings(code)
-        return await generate_text(code, task_type="review", embeddings=embeddings, max_new_tokens=350)
+        prompt = code if language.lower() in ("python", "py") else code
+        return await self.qwen.generate_text(prompt, task_type="review", embeddings=embeddings, max_new_tokens=350)
 
     async def generate_documentation(self, code: str) -> str:
         embeddings = await self.get_code_embeddings(code)
-        return await generate_text(code, task_type="docs", embeddings=embeddings, max_new_tokens=300)
+        return await self.qwen.generate_text(code, task_type="docs", embeddings=embeddings, max_new_tokens=300)
 
     async def generate_tests(self, code: str) -> str:
         embeddings = await self.get_code_embeddings(code)
-        return await generate_text(code, task_type="tests", embeddings=embeddings, max_new_tokens=400)
+        return await self.qwen.generate_text(code, task_type="tests", embeddings=embeddings, max_new_tokens=400)
 
     def clear_caches(self):
         self.embedding_cache.clear()
