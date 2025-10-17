@@ -5,16 +5,17 @@ AI-powered code review, documentation generation, and project management
 
 import asyncio
 import json
-from typing import Any, Optional
+from typing import Any
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+import re
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent, Resource, Prompt
-from huggingface_hub import InferenceClient
-import re
+
+from src.models import ModelManager  # <-- use Qwen2.5 integration
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -33,7 +34,7 @@ class DeveloperWorkflowServer:
 
     def __init__(self):
         self.server = Server("intelligent-dev-workflow")
-        self.hf_client = InferenceClient()
+        self.model_manager = ModelManager()  # Qwen2.5 manager
         self.setup_handlers()
 
         # Cache for model responses
@@ -52,15 +53,8 @@ class DeveloperWorkflowServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "pr_content": {
-                                "type": "string",
-                                "description": "Pull request diff or code content"
-                            },
-                            "language": {
-                                "type": "string",
-                                "description": "Programming language (python, javascript, etc.)",
-                                "default": "python"
-                            }
+                            "pr_content": {"type": "string", "description": "Pull request diff or code content"},
+                            "language": {"type": "string", "description": "Programming language", "default": "python"}
                         },
                         "required": ["pr_content"]
                     }
@@ -71,15 +65,8 @@ class DeveloperWorkflowServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "code_content": {
-                                "type": "string",
-                                "description": "Source code to document"
-                            },
-                            "doc_style": {
-                                "type": "string",
-                                "description": "Documentation style (markdown, restructuredtext, docstring)",
-                                "default": "markdown"
-                            }
+                            "code_content": {"type": "string", "description": "Source code to document"},
+                            "doc_style": {"type": "string", "description": "Documentation style", "default": "markdown"}
                         },
                         "required": ["code_content"]
                     }
@@ -90,15 +77,8 @@ class DeveloperWorkflowServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "code_content": {
-                                "type": "string",
-                                "description": "Code to analyze for bugs"
-                            },
-                            "severity_filter": {
-                                "type": "string",
-                                "description": "Filter by severity (critical, high, medium, low)",
-                                "default": "all"
-                            }
+                            "code_content": {"type": "string", "description": "Code to analyze for bugs"},
+                            "severity_filter": {"type": "string", "description": "Filter by severity", "default": "all"}
                         },
                         "required": ["code_content"]
                     }
@@ -109,10 +89,7 @@ class DeveloperWorkflowServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "code_content": {
-                                "type": "string",
-                                "description": "Code to analyze"
-                            }
+                            "code_content": {"type": "string", "description": "Code to analyze"}
                         },
                         "required": ["code_content"]
                     }
@@ -123,15 +100,8 @@ class DeveloperWorkflowServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "code_content": {
-                                "type": "string",
-                                "description": "Code to generate tests for"
-                            },
-                            "test_framework": {
-                                "type": "string",
-                                "description": "Testing framework (pytest, unittest, jest)",
-                                "default": "pytest"
-                            }
+                            "code_content": {"type": "string", "description": "Code to generate tests for"},
+                            "test_framework": {"type": "string", "description": "Testing framework", "default": "pytest"}
                         },
                         "required": ["code_content"]
                     }
@@ -230,10 +200,11 @@ class DeveloperWorkflowServer:
                 )
             ]
 
+    # -----------------------------
+    # Tool implementations using Qwen2.5
+    # -----------------------------
     async def review_pull_request(self, pr_content: str, language: str) -> dict:
-        """
-        AI-powered code review using CodeBERT and FLAN-T5
-        """
+        """AI-powered code review using Qwen2.5"""
         cache_key = f"review_{hash(pr_content)}"
         if cache_key in self.response_cache:
             logger.info("Returning cached review")
@@ -242,23 +213,9 @@ class DeveloperWorkflowServer:
         # Static analysis
         issues = self._static_analysis(pr_content, language)
 
-        # AI-powered review using FLAN-T5
+        # AI-powered review
         try:
-            prompt = f"""Review this {language} code and provide feedback:
-
-{pr_content[:1000]}  # Limit input size
-
-Identify: 1) bugs, 2) code smells, 3) improvements"""
-
-            response = await asyncio.to_thread(
-                self.hf_client.text_generation,
-                prompt,
-                model="google/flan-t5-base",
-                max_new_tokens=500
-            )
-
-            ai_suggestions = self._parse_ai_review(response)
-
+            ai_suggestions = await self.model_manager.generate_review(pr_content, language)
         except Exception as e:
             logger.warning(f"AI review failed: {e}, using static analysis only")
             ai_suggestions = []
@@ -277,28 +234,13 @@ Identify: 1) bugs, 2) code smells, 3) improvements"""
         return result
 
     async def generate_documentation(self, code_content: str, doc_style: str) -> dict:
-        """
-        Generate documentation using FLAN-T5
-        """
+        """Generate documentation using Qwen2.5"""
         try:
-            prompt = f"""Generate {doc_style} documentation for this code:
-
-{code_content[:1500]}
-
-Include: purpose, parameters, returns, examples"""
-
-            response = await asyncio.to_thread(
-                self.hf_client.text_generation,
-                prompt,
-                model="google/flan-t5-base",
-                max_new_tokens=800
-            )
-
-            # Extract function/class names
+            documentation = await self.model_manager.generate_documentation(code_content)
             entities = self._extract_entities(code_content)
 
             return {
-                "documentation": response,
+                "documentation": documentation,
                 "style": doc_style,
                 "entities_documented": entities,
                 "generated_at": datetime.now().isoformat()
@@ -308,13 +250,22 @@ Include: purpose, parameters, returns, examples"""
             logger.error(f"Documentation generation failed: {e}")
             return {"error": str(e)}
 
-    async def detect_bugs(self, code_content: str, severity_filter: str) -> dict:
-        """
-        Detect bugs using pattern matching and AI analysis
-        """
-        bugs = []
+    async def generate_tests(self, code_content: str, test_framework: str) -> dict:
+        """Generate unit tests using Qwen2.5"""
+        try:
+            test_code = await self.model_manager.generate_tests(code_content)
+            return {
+                "test_code": test_code,
+                "framework": test_framework,
+                "generated_at": datetime.now().isoformat()
+            }
 
-        # Pattern-based detection
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def detect_bugs(self, code_content: str, severity_filter: str) -> dict:
+        """Detect bugs using pattern matching"""
+        bugs = []
         patterns = {
             "sql_injection": (r"execute\(.*\+.*\)", "critical"),
             "hardcoded_password": (r"password\s*=\s*['\"].*['\"]", "high"),
@@ -342,10 +293,7 @@ Include: purpose, parameters, returns, examples"""
         }
 
     async def analyze_complexity(self, code_content: str) -> dict:
-        """
-        Analyze code complexity
-        """
-        # Simple complexity metrics
+        """Analyze code complexity"""
         lines = code_content.split('\n')
         functions = len(re.findall(r'def\s+\w+', code_content))
         classes = len(re.findall(r'class\s+\w+', code_content))
@@ -369,114 +317,52 @@ Include: purpose, parameters, returns, examples"""
             "recommendations": self._generate_refactoring_suggestions(complexity_score)
         }
 
-    async def generate_tests(self, code_content: str, test_framework: str) -> dict:
-        """
-        Generate unit tests
-        """
-        try:
-            prompt = f"""Generate {test_framework} unit tests for this code:
-
-{code_content[:1000]}
-
-Include edge cases and error handling"""
-
-            response = await asyncio.to_thread(
-                self.hf_client.text_generation,
-                prompt,
-                model="google/flan-t5-base",
-                max_new_tokens=1000
-            )
-
-            return {
-                "test_code": response,
-                "framework": test_framework,
-                "generated_at": datetime.now().isoformat()
-            }
-
-        except Exception as e:
-            return {"error": str(e)}
-
-    # Helper methods
-
+    # -----------------------------
+    # Helper methods (static analysis, score, etc.)
+    # -----------------------------
     def _static_analysis(self, code: str, language: str) -> list[dict]:
         """Simple static analysis"""
         issues = []
-
-        # Check for common issues
         if "TODO" in code or "FIXME" in code:
-            issues.append({
-                "type": "todo_comment",
-                "severity": "low",
-                "message": "Contains TODO/FIXME comments"
-            })
-
+            issues.append({"type": "todo_comment", "severity": "low", "message": "Contains TODO/FIXME comments"})
         if len(code.split('\n')) > 500:
-            issues.append({
-                "type": "large_file",
-                "severity": "medium",
-                "message": "File is very large, consider splitting"
-            })
-
+            issues.append({"type": "large_file", "severity": "medium", "message": "File is very large, consider splitting"})
         return issues
 
-    def _parse_ai_review(self, response: str) -> list[str]:
-        """Parse AI review response"""
-        suggestions = []
-        for line in response.split('\n'):
-            line = line.strip()
-            if line and len(line) > 10:
-                suggestions.append(line)
-        return suggestions[:5]  # Limit to top 5
-
     def _calculate_score(self, issues: list, suggestions: list) -> float:
-        """Calculate overall code quality score"""
         base_score = 100.0
         base_score -= len(issues) * 5
         base_score -= len(suggestions) * 3
         return max(0, min(100, base_score))
 
     def _generate_summary(self, issues: list, suggestions: list) -> str:
-        """Generate review summary"""
         if not issues and not suggestions:
             return "Code looks good! No major issues found."
         return f"Found {len(issues)} static issues and {len(suggestions)} suggestions."
 
     def _extract_entities(self, code: str) -> list[str]:
-        """Extract function and class names"""
         entities = []
         entities.extend(re.findall(r'def\s+(\w+)', code))
         entities.extend(re.findall(r'class\s+(\w+)', code))
         return entities
 
     def _calculate_max_nesting(self, code: str) -> int:
-        """Calculate maximum nesting level"""
         max_level = 0
-        current_level = 0
-
         for line in code.split('\n'):
             stripped = line.lstrip()
             if stripped:
                 indent = len(line) - len(stripped)
-                current_level = indent // 4
-                max_level = max(max_level, current_level)
-
+                level = indent // 4
+                max_level = max(max_level, level)
         return max_level
 
     def _generate_refactoring_suggestions(self, score: float) -> list[str]:
-        """Generate refactoring suggestions based on complexity"""
         if score < 30:
             return ["Code complexity is acceptable"]
         elif score < 60:
-            return [
-                "Consider breaking down large functions",
-                "Review nesting levels"
-            ]
+            return ["Consider breaking down large functions", "Review nesting levels"]
         else:
-            return [
-                "High complexity detected",
-                "Refactor into smaller modules",
-                "Extract complex logic into separate functions"
-            ]
+            return ["High complexity detected", "Refactor into smaller modules", "Extract complex logic into separate functions"]
 
     async def run(self):
         """Start the MCP server"""

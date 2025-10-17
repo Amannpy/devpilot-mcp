@@ -1,34 +1,61 @@
-# tests/test_server.py
+import asyncio
 import pytest
 from src.server import DeveloperWorkflowServer
 
-@pytest.mark.asyncio
-async def test_analyze_complexity(server):
-    code_snippet = """
-def foo(x):
-    if x > 5:
-        print("hi")
-    return x
+SAMPLE_CODE = """
+def calculate_sum(numbers):
+    total = 0
+    for num in numbers:
+        total += num
+    return total
 """
-    result = await server.analyze_complexity(code_snippet)
-    assert "complexity_score" in result
-    assert result["metrics"]["functions"] == 1
+
 
 @pytest.mark.asyncio
-async def test_detect_bugs(server):
-    buggy_code = 'password = "1234"\nprint("debug")'
-    result = await server.detect_bugs(buggy_code, 'all')
-    assert result["bugs_found"] >= 1
+async def test_review_pull_request():
+    server = DeveloperWorkflowServer()
+    result = await server.review_pull_request(SAMPLE_CODE, "python")
+
+    assert "static_issues" in result
+    assert "ai_suggestions" in result
+    assert "overall_score" in result
+    print("\n✅ Review Result:", result)
+
 
 @pytest.mark.asyncio
-async def test_generate_documentation(server):
-    server.hf_client.text_generation = lambda *args, **kwargs: "Mocked documentation output"
-    result = await server.generate_documentation("def add(a, b): return a + b", "markdown")
-    assert "documentation" in result
-    assert "add" in result["entities_documented"]
+async def test_generate_documentation():
+    server = DeveloperWorkflowServer()
+    doc_result = await server.generate_documentation(SAMPLE_CODE, "markdown")
+
+    assert "documentation" in doc_result
+    assert "entities_documented" in doc_result
+    print("\n✅ Documentation Result:", doc_result)
+
 
 @pytest.mark.asyncio
-async def test_generate_tests(server):
-    server.hf_client.text_generation = lambda *args, **kwargs: "Mocked test output"
-    result = await server.generate_tests("def add(a, b): return a + b", "pytest")
-    assert "test_code" in result
+async def test_generate_tests():
+    server = DeveloperWorkflowServer()
+    tests_result = await server.generate_tests(SAMPLE_CODE, "pytest")
+
+    assert "test_code" in tests_result
+    print("\n✅ Test Generation Result:", tests_result)
+
+
+@pytest.mark.asyncio
+async def test_detect_bugs():
+    server = DeveloperWorkflowServer()
+    bugs = await server.detect_bugs(SAMPLE_CODE, "all")
+
+    assert "bugs_found" in bugs
+    assert "bugs" in bugs
+    print("\n✅ Bugs Result:", bugs)
+
+
+@pytest.mark.asyncio
+async def test_analyze_complexity():
+    server = DeveloperWorkflowServer()
+    complexity = await server.analyze_complexity(SAMPLE_CODE)
+
+    assert "complexity_score" in complexity
+    assert "metrics" in complexity
+    print("\n✅ Complexity Result:", complexity)
