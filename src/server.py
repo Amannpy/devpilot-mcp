@@ -16,6 +16,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent, Resource, Prompt
 
 from src.models import ModelManager  # <-- use Qwen2.5 integration
+from src.tools import get_tools
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -46,67 +47,69 @@ class DeveloperWorkflowServer:
         @self.server.list_tools()
         async def list_tools() -> list[Tool]:
             """List available development tools"""
-            return [
-                Tool(
-                    name="review_pull_request",
-                    description="AI-powered code review with suggestions and bug detection",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "pr_content": {"type": "string", "description": "Pull request diff or code content"},
-                            "language": {"type": "string", "description": "Programming language", "default": "python"}
-                        },
-                        "required": ["pr_content"]
-                    }
-                ),
-                Tool(
-                    name="generate_documentation",
-                    description="Auto-generate technical documentation from code",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "code_content": {"type": "string", "description": "Source code to document"},
-                            "doc_style": {"type": "string", "description": "Documentation style", "default": "markdown"}
-                        },
-                        "required": ["code_content"]
-                    }
-                ),
-                Tool(
-                    name="detect_bugs",
-                    description="Static analysis and AI-powered bug detection",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "code_content": {"type": "string", "description": "Code to analyze for bugs"},
-                            "severity_filter": {"type": "string", "description": "Filter by severity", "default": "all"}
-                        },
-                        "required": ["code_content"]
-                    }
-                ),
-                Tool(
-                    name="analyze_complexity",
-                    description="Analyze code complexity and suggest refactoring",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "code_content": {"type": "string", "description": "Code to analyze"}
-                        },
-                        "required": ["code_content"]
-                    }
-                ),
-                Tool(
-                    name="generate_tests",
-                    description="Generate unit tests for given code",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "code_content": {"type": "string", "description": "Code to generate tests for"},
-                            "test_framework": {"type": "string", "description": "Testing framework", "default": "pytest"}
-                        },
-                        "required": ["code_content"]
-                    }
-                )
-            ]
+            return get_tools()
+            # return [
+            #     Tool(
+            #         name="review_pull_request",
+            #         description="AI-powered code review with suggestions and bug detection",
+            #         inputSchema={
+            #             "type": "object",
+            #             "properties": {
+            #                 "pr_content": {"type": "string", "description": "Pull request diff or code content"},
+            #                 "language": {"type": "string", "description": "Programming language", "default": "python"}
+            #             },
+            #             "required": ["pr_content"]
+            #         }
+            #     ),
+            #     Tool(
+            #         name="generate_documentation",
+            #         description="Auto-generate technical documentation from code",
+            #         inputSchema={
+            #             "type": "object",
+            #             "properties": {
+            #                 "code_content": {"type": "string", "description": "Source code to document"},
+            #                 "doc_style": {"type": "string", "description": "Documentation style", "default": "markdown"}
+            #             },
+            #             "required": ["code_content"]
+            #         }
+            #     ),
+            #     Tool(
+            #         name="detect_bugs",
+            #         description="Static analysis and AI-powered bug detection",
+            #         inputSchema={
+            #             "type": "object",
+            #             "properties": {
+            #                 "code_content": {"type": "string", "description": "Code to analyze for bugs"},
+            #                 "severity_filter": {"type": "string", "description": "Filter by severity", "default": "all"}
+            #             },
+            #             "required": ["code_content"]
+            #         }
+            #     ),
+            #     Tool(
+            #         name="analyze_complexity",
+            #         description="Analyze code complexity and suggest refactoring",
+            #         inputSchema={
+            #             "type": "object",
+            #             "properties": {
+            #                 "code_content": {"type": "string", "description": "Code to analyze"}
+            #             },
+            #             "required": ["code_content"]
+            #         }
+            #     ),
+            #     Tool(
+            #         name="generate_tests",
+            #         description="Generate unit tests for given code",
+            #         inputSchema={
+            #             "type": "object",
+            #             "properties": {
+            #                 "code_content": {"type": "string", "description": "Code to generate tests for"},
+            #                 "test_framework": {"type": "string", "description": "Testing framework", "default": "pytest"}
+            #             },
+            #             "required": ["code_content"]
+            #         }
+            #     )
+            # ]
+
 
         @self.server.call_tool()
         async def call_tool(name: str, arguments: Any) -> list[TextContent]:
