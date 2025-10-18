@@ -47,7 +47,7 @@ jobs:
       run: mkdir -p logs
 
     - name: Run demo script
-      run: python src/demo.py
+      run: python demo.py
 
     - name: Upload demo logs
       uses: actions/upload-artifact@v4
