@@ -1,5 +1,4 @@
 # tests/test_resources.py
-import pytest
 from src.resources import get_resources, Resource
 
 

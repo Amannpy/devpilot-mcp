@@ -14,6 +14,8 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+from src.config import config
+
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -34,8 +36,6 @@ try:
     HF_HUB_AVAILABLE = True
 except Exception:
     HF_HUB_AVAILABLE = False
-
-from src.config import config
 
 
 # ---------------------------

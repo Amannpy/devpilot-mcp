@@ -1,5 +1,4 @@
 # tests/test_tools.py
-import pytest
 from src.tools import get_tools
 
 
