@@ -50,7 +50,7 @@ jobs:
       run: python src/demo.py
 
     - name: Upload demo logs
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: demo-logs-python-${{ matrix.python-version }}
         path: logs/
