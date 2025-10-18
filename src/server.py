@@ -295,9 +295,9 @@ class DeveloperWorkflowServer:
         classes = len(re.findall(r"class\s+\w+", code_content))
         nesting_level = self._calculate_max_nesting(code_content)
 
-        complexity_score = float(min(
-            100.0, (len(lines) * 0.1 + functions * 2 + classes * 3 + nesting_level * 5)
-        ))
+        complexity_score = float(
+            min(100.0, (len(lines) * 0.1 + functions * 2 + classes * 3 + nesting_level * 5))
+        )
 
         return {
             "complexity_score": round(complexity_score, 2),
