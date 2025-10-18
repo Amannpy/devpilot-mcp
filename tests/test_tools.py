@@ -2,6 +2,7 @@
 import pytest
 from src.tools import get_tools
 
+
 def test_tools_structure():
     tools = get_tools()
     assert isinstance(tools, list)
@@ -12,6 +13,7 @@ def test_tools_structure():
         assert hasattr(tool, "description")
         assert hasattr(tool, "inputSchema")
         assert isinstance(tool.inputSchema, dict)
+
 
 def test_defaults_present():
     tools = get_tools()

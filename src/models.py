@@ -167,7 +167,9 @@ async def get_qwen_embeddings(text: str) -> Optional[List[float]]:
             if tokenized is None:
                 if _local.qwen_tokenizer is None:
                     raise RuntimeError("Qwen tokenizer not loaded")
-                tokenized = _local.qwen_tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+                tokenized = _local.qwen_tokenizer(
+                    text, return_tensors="pt", truncation=True, max_length=512
+                )
                 _token_cache.set(tok_key, tokenized)
             device = _local.qwen_model.device if _local.qwen_model is not None else _device()
             tokenized = {k: v.to(device) for k, v in tokenized.items()}
@@ -178,7 +180,11 @@ async def get_qwen_embeddings(text: str) -> Optional[List[float]]:
                     emb_tensor = getattr(outputs, "last_hidden_state", None)
                     if emb_tensor is not None:
                         return emb_tensor.mean(dim=1).squeeze(0).cpu().tolist()
-                    elif isinstance(outputs, tuple) and len(outputs) > 0 and hasattr(outputs[0], "mean"):
+                    elif (
+                        isinstance(outputs, tuple)
+                        and len(outputs) > 0
+                        and hasattr(outputs[0], "mean")
+                    ):
                         return outputs[0].mean(dim=1).squeeze(0).cpu().tolist()
                     logits = getattr(outputs, "logits", None)
                     if logits is not None:
@@ -195,17 +201,20 @@ async def get_qwen_embeddings(text: str) -> Optional[List[float]]:
     # HF Fallback
     client = _hf_client()
     if client:
+
         def _call_api() -> Optional[List[float]]:
             resp = client.feature_extraction(text[:512], model=config.huggingface.model_qwen)
             if isinstance(resp, list) and len(resp) and isinstance(resp[0], list):
                 return resp[0]
             return None
+
         embeddings = await asyncio.to_thread(_call_api)  # type: ignore
         if embeddings is not None:
             _embedding_cache.set(cache_key, embeddings)
         return embeddings
 
     return None
+
 
 # ---------------------------
 # Prompt & generation helpers
@@ -260,7 +269,9 @@ async def _generate_with_local_qwen(prompt: str, max_new_tokens: int = 300) -> s
     if tokenized is None:
         if _local.qwen_tokenizer is None:
             raise RuntimeError("Qwen tokenizer not loaded")
-        tokenized = _local.qwen_tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
+        tokenized = _local.qwen_tokenizer(
+            prompt, return_tensors="pt", truncation=True, max_length=1024
+        )
         _token_cache.set(tok_key, tokenized)
 
     try:
@@ -473,8 +484,11 @@ class ModelManager:
         elif score_val < 60.0:
             return ["Consider breaking down large functions", "Review nesting levels"]
         else:
-            return ["High complexity detected", "Refactor into smaller modules",
-                    "Extract complex logic into separate functions"]
+            return [
+                "High complexity detected",
+                "Refactor into smaller modules",
+                "Extract complex logic into separate functions",
+            ]
 
     async def generate_tests(self, code: str) -> str:
         embeddings = await self.get_code_embeddings(code)

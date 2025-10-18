@@ -31,7 +31,6 @@ def test_huggingface_config_defaults():
     assert cfg.use_cache is True
 
 
-
 def test_huggingface_config_env_override():
     """Test that environment variables override default config values."""
     os.environ["MODEL_NAME"] = "Qwen/Qwen2.5-mini"

@@ -16,6 +16,7 @@ load_dotenv()
 @dataclass
 class HuggingFaceConfig:
     """Hugging Face + Qwen Model Configuration"""
+
     api_token: Optional[str] = None
     model_qwen: str = "Qwen/Qwen2.5-0.5B-Instruct"
     model_cache_dir: str = "./models_cache"
@@ -40,6 +41,7 @@ class HuggingFaceConfig:
 @dataclass
 class ServerConfig:
     """MCP Server Configuration"""
+
     server_name: str = "intelligent-dev-workflow"
     log_level: str = "INFO"
     cache_size: int = 100
@@ -56,12 +58,13 @@ class ServerConfig:
 @dataclass
 class AnalysisConfig:
     """Code Analysis Configuration"""
+
     max_file_size: int = 100_000
     max_lines_per_function: int = 50
     max_complexity_score: float = 10.0
-    enabled_checks: list[str] = field(default_factory=lambda: [
-        "security", "complexity", "style", "documentation", "testing"
-    ])
+    enabled_checks: list[str] = field(
+        default_factory=lambda: ["security", "complexity", "style", "documentation", "testing"]
+    )
 
 
 # -------------------------------------------------------------------------
@@ -69,6 +72,7 @@ class AnalysisConfig:
 # -------------------------------------------------------------------------
 class Config:
     """Main configuration class"""
+
     def __init__(self):
         self.huggingface = HuggingFaceConfig()
         self.server = ServerConfig()

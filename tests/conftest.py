@@ -3,10 +3,12 @@
 import pytest
 from src.server import DeveloperWorkflowServer
 
+
 @pytest.fixture
 def server():
     """Create server instance for testing"""
     return DeveloperWorkflowServer()
+
 
 @pytest.fixture
 def sample_python_code():
@@ -26,6 +28,7 @@ class ShoppingCart:
     def add(self, item):
         self.items.append(item)
 """
+
 
 @pytest.fixture
 def buggy_code():
