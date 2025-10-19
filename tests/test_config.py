@@ -51,7 +51,7 @@ def test_server_config_env_override():
     os.environ["LOG_LEVEL"] = "DEBUG"
     cfg = ServerConfig()
     assert cfg.log_level == "DEBUG"
-    assert cfg.server_name == "intelligent-dev-workflow"
+    assert cfg.server_name == "devpilot-mcp"
 
 
 # -------------------------------------------------------------------------
