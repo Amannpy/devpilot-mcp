@@ -17,7 +17,7 @@ from mcp.types import Tool, TextContent, Resource, Prompt
 
 from src.models import ModelManager  # Qwen2.5 integration
 from src.tools import get_tools
-from src.rag import RAGManager
+from src.rag import RAGManager  # Updated FAISS-based RAGManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -57,7 +57,7 @@ class DeveloperWorkflowServer:
             tools.append(
                 Tool(
                     name="contextual_search",
-                    description="Perform multi-vector contextual retrieval using project-aware RAG",
+                    description="Perform multi-vector contextual retrieval using project-aware RAG (FAISS backend)",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -117,8 +117,12 @@ class DeveloperWorkflowServer:
                 elif name == "contextual_search":
                     query = arguments.get("query", "")
                     top_k = int(arguments.get("top_k", 5))
-                    out = await rag_manager.retrieve_and_generate(query, task="general", language=arguments.get("language"), k=top_k)
-                    # return the generated text and retrieved context
+                    out = await rag_manager.retrieve_and_generate(
+                        query,
+                        task="general",
+                        language=arguments.get("language"),
+                        k=top_k
+                    )
                     result = {
                         "query": query,
                         "top_k": top_k,
@@ -128,7 +132,6 @@ class DeveloperWorkflowServer:
                     }
 
                 elif name == "index_project_context":
-                    # Expect 'files' to be a list of file paths OR root_path for repo indexing
                     files = arguments.get("files")
                     root_path = arguments.get("root_path")
                     if root_path:
@@ -145,7 +148,6 @@ class DeveloperWorkflowServer:
                         result = {"indexed_files": indexed}
                     else:
                         raise ValueError("index_project_context requires 'files' or 'root_path'.")
-
                 else:
                     raise ValueError(f"Unknown tool: {name}")
 
