@@ -42,7 +42,7 @@ class HuggingFaceConfig:
 class ServerConfig:
     """MCP Server Configuration"""
 
-    server_name: str = "intelligent-dev-workflow"
+    server_name: str = "devpilot-mcp"
     log_level: str = "INFO"
     cache_size: int = 100
     rate_limit_requests: int = 100

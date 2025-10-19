@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/mcp-ai-server.iml" filepath="$PROJECT_DIR$/.idea/mcp-ai-server.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/devpilot-mcp.iml" filepath="$PROJECT_DIR$/.idea/devpilot-mcp.iml" />
     </modules>
   </component>
 </project>

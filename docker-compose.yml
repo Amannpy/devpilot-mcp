@@ -3,7 +3,7 @@ version: '3.8'
 services:
   mcp-server:
     build: .
-    container_name: mcp-ai-dev-server
+    container_name: devpilot-mcp-server
     environment:
       - HUGGINGFACE_API_TOKEN=${HUGGINGFACE_API_TOKEN}
       - LOG_LEVEL=INFO

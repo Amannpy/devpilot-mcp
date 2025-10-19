@@ -38,7 +38,7 @@ class DeveloperWorkflowServer:
     """Main MCP server for developer workflows"""
 
     def __init__(self):
-        self.server = Server("intelligent-dev-workflow")
+        self.server = Server("devpilot-mcp")
         self.model_manager = ModelManager()  # Qwen2.5 manager
         self.setup_handlers()
 
