@@ -24,4 +24,9 @@ def get_resources() -> List[Resource]:
             name="Project Metrics",
             description="Code quality metrics and statistics",
         ),
+        Resource(
+            uri="project://context/indexed",
+            name="Indexed Project Context",
+            description="Contextual project data indexed for multi-vector retrieval using FAISS",
+        ),
     ]
