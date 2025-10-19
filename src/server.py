@@ -22,6 +22,9 @@ from src.rag import RAGManager
 
 # create a single rag manager instance
 rag_manager = RAGManager()
+class ServerApp:
+    def __init__(self):
+        self.rag_manager = RAGManager()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -160,7 +163,6 @@ class DeveloperWorkflowServer:
                         arguments["code_content"], arguments.get("test_framework", "pytest")
                     )
                 elif name == "contextual_search":
-                    from src.rag import rag_manager
                     query = arguments.get("query", "")
                     top_k = int(arguments.get("top_k", 5))
                     results = await rag_manager.query(query, top_k=top_k)
