@@ -14,27 +14,22 @@ import re
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent, Resource, Prompt
-from pydantic import AnyUrl
 
-from src.models import ModelManager  # <-- use Qwen2.5 integration
+from src.models import ModelManager  # Qwen2.5 integration
 from src.tools import get_tools
 from src.rag import RAGManager
-
-# create a single rag manager instance
-rag_manager = RAGManager()
-class ServerApp:
-    def __init__(self):
-        self.rag_manager = RAGManager()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Single RAG manager instance (shared)
+rag_manager = RAGManager()
+
 
 @dataclass
 class CodeAnalysisResult:
     """Structure for code analysis results"""
-
     issues: list[dict]
     suggestions: list[str]
     complexity_score: float
@@ -47,10 +42,8 @@ class DeveloperWorkflowServer:
     def __init__(self):
         self.server = Server("devpilot-mcp")
         self.model_manager = ModelManager()  # Qwen2.5 manager
+        self.response_cache: dict[str, Any] = {}
         self.setup_handlers()
-
-        # Cache for model responses
-        self.response_cache = {}
 
     def setup_handlers(self):
         """Register all MCP handlers"""
@@ -69,76 +62,30 @@ class DeveloperWorkflowServer:
                         "type": "object",
                         "properties": {
                             "query": {"type": "string", "description": "Natural language or code-based search query"},
-                            "top_k": {"type": "integer", "description": "Number of relevant results to retrieve",
-                                      "default": 5},
+                            "top_k": {"type": "integer", "description": "Number of relevant results to retrieve", "default": 5},
                         },
                         "required": ["query"],
                     },
                 )
             )
 
-            return get_tools()
-            # return [
-            #     Tool(
-            #         name="review_pull_request",
-            #         description="AI-powered code review with suggestions and bug detection",
-            #         inputSchema={
-            #             "type": "object",
-            #             "properties": {
-            #                 "pr_content": {"type": "string", "description": "Pull request diff or code content"},
-            #                 "language": {"type": "string", "description": "Programming language", "default": "python"}
-            #             },
-            #             "required": ["pr_content"]
-            #         }
-            #     ),
-            #     Tool(
-            #         name="generate_documentation",
-            #         description="Auto-generate technical documentation from code",
-            #         inputSchema={
-            #             "type": "object",
-            #             "properties": {
-            #                 "code_content": {"type": "string", "description": "Source code to document"},
-            #                 "doc_style": {"type": "string", "description": "Documentation style", "default": "markdown"}
-            #             },
-            #             "required": ["code_content"]
-            #         }
-            #     ),
-            #     Tool(
-            #         name="detect_bugs",
-            #         description="Static analysis and AI-powered bug detection",
-            #         inputSchema={
-            #             "type": "object",
-            #             "properties": {
-            #                 "code_content": {"type": "string", "description": "Code to analyze for bugs"},
-            #                 "severity_filter": {"type": "string", "description": "Filter by severity", "default": "all"}
-            #             },
-            #             "required": ["code_content"]
-            #         }
-            #     ),
-            #     Tool(
-            #         name="analyze_complexity",
-            #         description="Analyze code complexity and suggest refactoring",
-            #         inputSchema={
-            #             "type": "object",
-            #             "properties": {
-            #                 "code_content": {"type": "string", "description": "Code to analyze"}
-            #             },
-            #             "required": ["code_content"]
-            #         }
-            #     ),
-            #     Tool(
-            #         name="generate_tests",
-            #         description="Generate unit tests for given code",
-            #         inputSchema={
-            #             "type": "object",
-            #             "properties": {
-            #                 "code_content": {"type": "string", "description": "Code to generate tests for"},
-            #                 "test_framework": {"type": "string", "description": "Testing framework", "default": "pytest"}
-            #             },
-            #             "required": ["code_content"]
-            #         }
-            #     )
-            # ]
+            # Add project indexing tool for uploading repo/files into RAG memory
+            tools.append(
+                Tool(
+                    name="index_project_context",
+                    description="Index project files or documentation for contextual retrieval",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "files": {"type": "array", "items": {"type": "string"}, "description": "List of file paths to index"},
+                            "root_path": {"type": "string", "description": "Optional repo root path"},
+                        },
+                        "required": ["files"],
+                    },
+                )
+            )
+
+            return tools
 
         @self.server.call_tool()
         async def call_tool(name: str, arguments: Any) -> list[TextContent]:
@@ -148,32 +95,64 @@ class DeveloperWorkflowServer:
                     result = await self.review_pull_request(
                         arguments["pr_content"], arguments.get("language", "python")
                     )
+
                 elif name == "generate_documentation":
                     result = await self.generate_documentation(
                         arguments["code_content"], arguments.get("doc_style", "markdown")
                     )
+
                 elif name == "detect_bugs":
                     result = await self.detect_bugs(
                         arguments["code_content"], arguments.get("severity_filter", "all")
                     )
+
                 elif name == "analyze_complexity":
                     result = await self.analyze_complexity(arguments["code_content"])
+
                 elif name == "generate_tests":
                     result = await self.generate_tests(
                         arguments["code_content"], arguments.get("test_framework", "pytest")
                     )
+
                 elif name == "contextual_search":
                     query = arguments.get("query", "")
                     top_k = int(arguments.get("top_k", 5))
-                    results = await rag_manager.query(query, top_k=top_k)
-                    result = {"query": query, "top_k": top_k, "results": results}
+                    out = await rag_manager.retrieve_and_generate(query, task="general", language=arguments.get("language"), k=top_k)
+                    # return the generated text and retrieved context
+                    result = {
+                        "query": query,
+                        "top_k": top_k,
+                        "generated_text": out.get("generated_text"),
+                        "retrieved": out.get("retrieved"),
+                        "prompt": out.get("prompt"),
+                    }
+
+                elif name == "index_project_context":
+                    # Expect 'files' to be a list of file paths OR root_path for repo indexing
+                    files = arguments.get("files")
+                    root_path = arguments.get("root_path")
+                    if root_path:
+                        res = await rag_manager.index_repo(root_path)
+                        result = res
+                    elif files:
+                        indexed = 0
+                        for f in files:
+                            try:
+                                await rag_manager.index_file(f)
+                                indexed += 1
+                            except Exception as e:
+                                logger.warning("Indexing file %s failed: %s", f, e)
+                        result = {"indexed_files": indexed}
+                    else:
+                        raise ValueError("index_project_context requires 'files' or 'root_path'.")
+
                 else:
                     raise ValueError(f"Unknown tool: {name}")
 
                 return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
             except Exception as e:
-                logger.error(f"Tool execution error: {e}")
+                logger.error(f"Tool execution error: {e}", exc_info=True)
                 return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
 
         @self.server.list_resources()
@@ -181,13 +160,13 @@ class DeveloperWorkflowServer:
             """List available resources"""
             return [
                 Resource(
-                    uri=AnyUrl("git://repository/analysis"),
+                    uri="git://repository/analysis",
                     name="Repository Analysis",
                     description="Analyze git repository structure and health",
                     mimeType="application/json",
                 ),
                 Resource(
-                    uri=AnyUrl("project://metrics/overview"),
+                    uri="project://metrics/overview",
                     name="Project Metrics",
                     description="Code quality metrics and statistics",
                     mimeType="application/json",
@@ -238,9 +217,11 @@ class DeveloperWorkflowServer:
         # Static analysis
         issues = self._static_analysis(pr_content, language)
 
-        # AI-powered review
+        # AI-powered review (use model_manager; returns text)
         try:
-            ai_suggestions = await self.model_manager.generate_review(pr_content, language)
+            ai_text = await self.model_manager.generate_review(pr_content, language)
+            # normalize to list of suggestions for compatibility with scoring
+            ai_suggestions = [ai_text] if isinstance(ai_text, str) and ai_text else []
         except Exception as e:
             logger.warning(f"AI review failed: {e}, using static analysis only")
             ai_suggestions = []
@@ -409,7 +390,7 @@ class DeveloperWorkflowServer:
     async def run(self):
         """Start the MCP server"""
         async with stdio_server() as (read_stream, write_stream):
-            logger.info("Intelligent Developer Workflow MCP Server started")
+            logger.info("DevPilot MCP server started")
             await self.server.run(
                 read_stream, write_stream, self.server.create_initialization_options()
             )
