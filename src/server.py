@@ -18,6 +18,10 @@ from pydantic import AnyUrl
 
 from src.models import ModelManager  # <-- use Qwen2.5 integration
 from src.tools import get_tools
+from src.rag import RAGManager
+
+# create a single rag manager instance
+rag_manager = RAGManager()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -51,6 +55,25 @@ class DeveloperWorkflowServer:
         @self.server.list_tools()
         async def list_tools() -> list[Tool]:
             """List available development tools"""
+            tools = get_tools()
+
+            # Add RAG-powered contextual retrieval tool
+            tools.append(
+                Tool(
+                    name="contextual_search",
+                    description="Perform multi-vector contextual retrieval using project-aware RAG",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Natural language or code-based search query"},
+                            "top_k": {"type": "integer", "description": "Number of relevant results to retrieve",
+                                      "default": 5},
+                        },
+                        "required": ["query"],
+                    },
+                )
+            )
+
             return get_tools()
             # return [
             #     Tool(
@@ -136,6 +159,12 @@ class DeveloperWorkflowServer:
                     result = await self.generate_tests(
                         arguments["code_content"], arguments.get("test_framework", "pytest")
                     )
+                elif name == "contextual_search":
+                    from src.rag import rag_manager
+                    query = arguments.get("query", "")
+                    top_k = int(arguments.get("top_k", 5))
+                    results = await rag_manager.query(query, top_k=top_k)
+                    result = {"query": query, "top_k": top_k, "results": results}
                 else:
                     raise ValueError(f"Unknown tool: {name}")
 
