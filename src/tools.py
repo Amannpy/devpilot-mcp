@@ -105,11 +105,11 @@ def get_tools() -> List[Tool]:
         ),
     ]
 
-    # ✅ Add contextual RAG search tool
+    # ✅ Add contextual RAG search tool (FAISS backend)
     base_tools.append(
         Tool(
             name="contextual_search",
-            description="Perform multi-vector contextual retrieval using project-aware RAG",
+            description="Perform multi-vector contextual retrieval using project-aware RAG (FAISS)",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -122,8 +122,35 @@ def get_tools() -> List[Tool]:
                         "description": "Number of relevant results to retrieve",
                         "default": 5,
                     },
+                    "language": {
+                        "type": "string",
+                        "description": "Optional programming language filter",
+                    },
                 },
                 "required": ["query"],
+            },
+        )
+    )
+
+    # ✅ Add project indexing tool
+    base_tools.append(
+        Tool(
+            name="index_project_context",
+            description="Index project files or documentation for contextual retrieval (FAISS RAG)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "files": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of file paths to index",
+                    },
+                    "root_path": {
+                        "type": "string",
+                        "description": "Optional repository root path to index all files",
+                    },
+                },
+                "required": ["files"],
             },
         )
     )
