@@ -1,4 +1,3 @@
-# src/rag_faiss.py
 """
 FAISS-based Lightweight Multi-Vector + Dynamic RAG subsystem for DevPilot MCP.
 
@@ -10,19 +9,18 @@ FAISS-based Lightweight Multi-Vector + Dynamic RAG subsystem for DevPilot MCP.
 
 import os
 import uuid
-import json
-import asyncio
-from typing import List, Dict, Optional
-from pathlib import Path
 import pickle
-import numpy as np
+import asyncio
+import faiss
+from pathlib import Path
+from typing import List, Dict, Optional
 import ast
 import re
-
+import numpy as np
 from pygments.lexers import guess_lexer_for_filename
 from pygments.util import ClassNotFound
 
-from src.models import model_manager  # existing ModelManager singleton
+from src.models import model_manager
 
 # ---------------------------
 # Simple tokenizer for sparse matching
@@ -100,24 +98,37 @@ def sliding_window_chunks(text: str, file_path: str, language: str="text", max_c
     return chunks
 
 # ---------------------------
-# Indexer using FAISS + metadata
+# Indexer using FAISS + metadata + embedding_dim persistence
 # ---------------------------
-import faiss
-
 class Indexer:
-    def __init__(self, embedding_dim: int = 768, persist_dir: Optional[str] = None):
-        self.embedding_dim = embedding_dim
-        self.faiss_index = faiss.IndexFlatL2(embedding_dim)  # CPU-only
-        self.metadata: List[Dict] = []
+    def __init__(self, embedding_dim: Optional[int] = None, persist_dir: Optional[str] = None):
         self.persist_dir = persist_dir or "./faiss_index"
         os.makedirs(self.persist_dir, exist_ok=True)
         self.index_file_path = os.path.join(self.persist_dir, "index.faiss")
         self.meta_file_path = os.path.join(self.persist_dir, "metadata.pkl")
+        self.config_file_path = os.path.join(self.persist_dir, "config.json")
+
+        # Load persisted embedding_dim if exists
+        self.embedding_dim = embedding_dim or 0
+        if os.path.exists(self.config_file_path):
+            try:
+                import json
+                with open(self.config_file_path, "r") as f:
+                    cfg = json.load(f)
+                    self.embedding_dim = cfg.get("embedding_dim", self.embedding_dim)
+            except Exception:
+                pass
+
+        if self.embedding_dim <= 0:
+            self.embedding_dim = 768  # fallback default
+
+        self.faiss_index = faiss.IndexFlatL2(self.embedding_dim)
+        self.metadata: List[Dict] = []
 
     async def embed_texts(self, texts: List[str]) -> np.ndarray:
         embeddings = []
         for t in texts:
-            emb = await model_manager.get_code_embeddings(t)  # returns List[float]
+            emb = await model_manager.get_code_embeddings(t)
             if emb is None:
                 emb = np.zeros(self.embedding_dim, dtype=np.float32)
             embeddings.append(np.array(emb, dtype=np.float32))
@@ -125,23 +136,34 @@ class Indexer:
 
     async def add_chunks(self, chunks: List[Dict]):
         texts = [c["text"] for c in chunks]
-        ids = [c["id"] for c in chunks]
         embeddings = await self.embed_texts(texts)
         self.faiss_index.add(embeddings)
-        # store metadata alongside embedding order
         self.metadata.extend(chunks)
 
     def persist(self):
         faiss.write_index(self.faiss_index, self.index_file_path)
         with open(self.meta_file_path, "wb") as f:
             pickle.dump(self.metadata, f)
+        import json
+        with open(self.config_file_path, "w") as f:
+            json.dump({"embedding_dim": self.embedding_dim}, f)
 
     def load(self):
-        if os.path.exists(self.index_file_path):
-            self.faiss_index = faiss.read_index(self.index_file_path)
         if os.path.exists(self.meta_file_path):
             with open(self.meta_file_path, "rb") as f:
                 self.metadata = pickle.load(f)
+        if os.path.exists(self.config_file_path):
+            try:
+                import json
+                with open(self.config_file_path, "r") as f:
+                    cfg = json.load(f)
+                    self.embedding_dim = cfg.get("embedding_dim", self.embedding_dim)
+            except Exception:
+                pass
+        if os.path.exists(self.index_file_path):
+            self.faiss_index = faiss.read_index(self.index_file_path)
+        else:
+            self.faiss_index = faiss.IndexFlatL2(self.embedding_dim)
 
 # ---------------------------
 # Retriever: FAISS dense + keyword sparse hybrid
@@ -197,7 +219,6 @@ class Retriever:
     async def hybrid_retrieve(self, query: str, k: int = 6):
         dense_results = await self.dense_query(query, k)
         sparse_results = self.sparse_query(query, k)
-        # merge by id and sum scores
         candidates = {r["id"]: r for r in dense_results}
         for r in sparse_results:
             if r["id"] in candidates:
@@ -211,24 +232,36 @@ class Retriever:
 # RAG Manager
 # ---------------------------
 class RAGManager:
-    def __init__(self, embedding_dim: int = 768, persist_dir: Optional[str] = None):
-        self.indexer = Indexer(embedding_dim=embedding_dim, persist_dir=persist_dir)
-        self.retriever = Retriever(self.indexer)
+    def __init__(self, embedding_dim: Optional[int] = None, persist_dir: Optional[str] = None):
+        self.persist_dir = persist_dir or "./faiss_index"
         self.max_chunks_in_prompt = 4
+        self.embedding_dim = embedding_dim
+        self._initialized = False
+        self.indexer: Optional[Indexer] = None
+        self.retriever: Optional[Retriever] = None
+
+    async def _initialize(self):
+        if self._initialized:
+            return
+        if self.embedding_dim is None:
+            emb = await model_manager.get_code_embeddings("test")
+            self.embedding_dim = len(emb) if emb else 768
+        self.indexer = Indexer(embedding_dim=self.embedding_dim, persist_dir=self.persist_dir)
+        self.retriever = Retriever(self.indexer)
+        self._initialized = True
 
     async def index_file(self, file_path: str, language: Optional[str] = None):
+        await self._initialize()
         text = Path(file_path).read_text(encoding="utf-8", errors="ignore")
         lang = language or self.detect_language(file_path, text)
-        if lang == "python":
-            chunks = extract_python_chunks(text, file_path)
-        else:
-            chunks = sliding_window_chunks(text, file_path, language=lang)
+        chunks = extract_python_chunks(text, file_path) if lang == "python" else sliding_window_chunks(text, file_path, language=lang)
         for c in chunks:
             c.setdefault("language", lang)
         await self.indexer.add_chunks(chunks)
         self.indexer.persist()
 
     async def index_repo(self, root_path: str, extensions: Optional[List[str]] = None):
+        await self._initialize()
         extensions = extensions or ['.py', '.md', '.txt', '.js', '.ts', '.java']
         files_indexed = 0
         for p in Path(root_path).rglob("*"):
@@ -272,6 +305,7 @@ class RAGManager:
         return f"{instruction}\n\nContext:\n{ctx_text}\n\nUser Query:\n{user_query}\n\nResponse:\n"
 
     async def retrieve_and_generate(self, user_query: str, task: str = "review") -> Dict:
+        await self._initialize()
         retrieved = await self.retriever.hybrid_retrieve(user_query)
         prompt = self._build_prompt(user_query, retrieved, task)
         generated = await model_manager.qwen.generate_text(prompt, task_type=task, embeddings=None, max_new_tokens=512)
