@@ -68,6 +68,24 @@ class AnalysisConfig:
 
 
 # -------------------------------------------------------------------------
+# 🧬 RAG / FAISS Configuration
+# -------------------------------------------------------------------------
+@dataclass
+class RAGConfig:
+    """Configuration for project-aware retrieval and vector store"""
+
+    persist_dir: str = "./rag_db"
+    embedding_dim: int = 1536
+    index_type: str = "faiss"  # could also support 'inmemory' or 'duckdb'
+    top_k: int = 6
+    use_gpu: bool = False
+
+    def __post_init__(self):
+        if not os.path.exists(self.persist_dir):
+            os.makedirs(self.persist_dir, exist_ok=True)
+
+
+# -------------------------------------------------------------------------
 # 🧾 Main Config Wrapper
 # -------------------------------------------------------------------------
 class Config:
@@ -77,6 +95,7 @@ class Config:
         self.huggingface = HuggingFaceConfig()
         self.server = ServerConfig()
         self.analysis = AnalysisConfig()
+        self.rag = RAGConfig()
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -89,6 +108,8 @@ class Config:
             print("⚠️  Warning: Hugging Face API token not set (will use public access).")
         if not os.path.exists(self.huggingface.model_cache_dir):
             os.makedirs(self.huggingface.model_cache_dir, exist_ok=True)
+        if not os.path.exists(self.rag.persist_dir):
+            os.makedirs(self.rag.persist_dir, exist_ok=True)
         return True
 
 
