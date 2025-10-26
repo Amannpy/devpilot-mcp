@@ -1,24 +1,16 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from backend.services.pr_service import analyze_pr
+from backend.services.pr_service import PRService
 
-router = APIRouter(prefix="/pr", tags=["Pull Request Analysis"])
-
-
-class PRRequest(BaseModel):
-    title: str
-    description: str
-    diff: str | None = None  # optional: git diff or code snippet
-
+router = APIRouter()
+pr_service = PRService()
 
 @router.post("/analyze")
-async def analyze_pull_request(payload: PRRequest):
+async def analyze_pr(title: str, description: str, diff: str = None, code: str = None):
     """
-    Analyze a pull request description and code diff.
-    Returns documentation insights, code suggestions, or potential bugs.
+    Analyze a Pull Request: suggestions, documentation, and potential issues.
     """
     try:
-        result = analyze_pr(payload.title, payload.description, payload.diff)
-        return {"status": "success", "analysis": result}
+        result = await pr_service.analyze_pr(title, description, diff, code)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
