@@ -3,7 +3,7 @@ Session management API routes for the MCP backend.
 Handles creation, message history tracking, and retrieval of chat sessions.
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from backend.services.session_service import SessionService
 from backend.core.utils.logger import get_logger
@@ -32,9 +32,7 @@ class AddMessageRequest(BaseModel):
 # ----------------------------
 @router.post("/start")
 async def start_session(request: StartSessionRequest):
-    """
-    Start a new chat session for a user.
-    """
+    """Start a new chat session for a user."""
     try:
         logger.info(f"🟢 Starting new session for user_id={request.user_id}")
         session_id = await session_service.create_session(request.user_id)
@@ -50,13 +48,13 @@ async def start_session(request: StartSessionRequest):
 
 @router.post("/history")
 async def add_to_history(request: AddMessageRequest):
-    """
-    Add a message to an existing session’s history.
-    """
+    """Add a message to an existing session’s history."""
     try:
         logger.info(f"🗨️ Adding message to session {request.session_id} by role={request.role}")
         await session_service.add_message(request.session_id, request.message, request.role)
         return {"status": "success", "message": "Message added to session history"}
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Session {request.session_id} not found")
     except Exception as e:
         logger.exception(f"❌ Failed to add message to session {request.session_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to add message to history")
@@ -64,9 +62,7 @@ async def add_to_history(request: AddMessageRequest):
 
 @router.get("/history")
 async def get_history(session_id: str):
-    """
-    Retrieve the full chat history for a given session.
-    """
+    """Retrieve the full chat history for a given session."""
     try:
         logger.info(f"📜 Fetching chat history for session_id={session_id}")
         history = await session_service.get_history(session_id)
