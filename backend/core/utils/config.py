@@ -3,8 +3,9 @@
 Global configuration management for MCP AI Server.
 Loads environment variables and provides typed access across modules.
 """
-
-from pydantic import BaseSettings, Field
+from pathlib import Path
+from pydantic_settings import BaseSettings
+from pydantic import Field
 from functools import lru_cache
 import os
 

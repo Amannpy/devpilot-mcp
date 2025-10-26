@@ -1,99 +1,55 @@
 """
-QwenModel — unified wrapper around local or remote Qwen models.
+QwenModelWrapper — unified async interface for Qwen-based models.
 Supports embeddings and text generation for MCP backend.
 """
 
 import asyncio
-from typing import List, Optional, Dict, Any
+import hashlib
+from typing import List, Optional
+import numpy as np
+
 from backend.core.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
-class QwenModel:
+class QwenModelWrapper:
     """
     Wrapper for Qwen model (local or remote).
-    Handles text generation and embeddings.
+    Handles both embeddings and text generation tasks.
     """
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str = "Qwen-2.5-7B-Instruct"):
         self.model_name = model_name
-        logger.info(f"Initializing Qwen model: {model_name}")
-
-        # Placeholder: detect backend (local vs API)
-        # In production, this can dynamically load from HuggingFace or local engine
-        self.is_local = True  # Switch if using remote API
+        self.is_local = True  # Future: auto-detect remote model availability
+        logger.info(f"✅ Initialized QwenModelWrapper for {self.model_name}")
 
     # ----------------------------------------------------
     # Embeddings
     # ----------------------------------------------------
-    def get_embeddings(self, text: str) -> Optional[List[float]]:
+    async def get_embeddings(self, text: str) -> Optional[List[float]]:
         """
-        Compute embeddings for given text.
+        Compute deterministic embeddings for a given text (mocked for MVP).
+        This simulates a consistent hash-based embedding space.
         """
         try:
-            # Simulate embedding computation
-            import numpy as np
-            import hashlib
-
-            # Simple deterministic embedding generator for MVP
-            hash_bytes = hashlib.sha256(text.encode("utf-8")).digest()
-            vector = np.frombuffer(hash_bytes, dtype=np.uint8).astype(float)
-            normalized = vector[:256] / 255.0
-            return normalized.tolist()
-
+            logger.debug(f"🔹 Generating embeddings for text: {text[:60]!r}...")
+            return await asyncio.to_thread(self._compute_embeddings, text)
         except Exception as e:
-            logger.error(f"Embedding generation failed: {e}")
+            logger.exception(f"❌ Embedding generation failed: {e}")
             return None
+
+    def _compute_embeddings(self, text: str) -> List[float]:
+        """
+        CPU-bound embedding generation.
+        """
+        hash_bytes = hashlib.sha256(text.encode("utf-8")).digest()
+        vector = np.frombuffer(hash_bytes, dtype=np.uint8).astype(float)
+        normalized = vector[:256] / 255.0
+        return normalized.tolist()
 
     # ----------------------------------------------------
     # Text Generation
-    # ----------------------------------------------------
-    def generate(
-        self,
-        prompt: str,
-        task_type: str = "general",
-        embeddings: Optional[List[float]] = None,
-        temperature: float = 0.7,
-        max_tokens: int = 300,
-    ) -> str:
-        """
-        Generate text from the Qwen model.
-        """
-        try:
-            # For MVP, simulate generation; later connect with real inference
-            logger.info(f"Generating text with {self.model_name} [task={task_type}]")
-
-            if "optimize" in prompt.lower():
-                return (
-                    "✅ Suggested optimization:\n"
-                    "Use vectorized NumPy operations instead of loops where possible. "
-                    "Consider caching intermediate computations."
-                )
-            elif "bug" in prompt.lower():
-                return (
-                    "⚠️ Potential bug detected:\n"
-                    "Check variable scoping and input validation. Missing try/except may cause runtime errors."
-                )
-            elif "document" in prompt.lower() or "explain" in prompt.lower():
-                return (
-                    "🧠 Code explanation:\n"
-                    "This module trains a simple regression model on housing data. "
-                    "It loads the dataset, splits it, trains a LinearRegression model, "
-                    "and evaluates it using Mean Squared Error."
-                )
-            else:
-                return (
-                    f"🤖 General response from {self.model_name}:\n"
-                    f"'{prompt[:200]}...' — processed successfully."
-                )
-
-        except Exception as e:
-            logger.exception(f"Qwen text generation failed: {e}")
-            return "⚠️ Text generation failed due to internal error."
-
-    # ----------------------------------------------------
-    # Async wrapper
     # ----------------------------------------------------
     async def generate_text(
         self,
@@ -103,12 +59,57 @@ class QwenModel:
         max_tokens: int = 300,
     ) -> str:
         """
-        Async version for integration with FastAPI or async services.
+        Asynchronous text generation entrypoint.
+        Simulates LLM responses and integrates with prompt services.
         """
-        return await asyncio.to_thread(
-            self.generate,
-            prompt=prompt,
-            task_type=task_type,
-            embeddings=embeddings,
-            max_tokens=max_tokens,
-        )
+        try:
+            logger.info(f"🤖 Generating text [task={task_type}, tokens={max_tokens}]")
+            return await asyncio.to_thread(
+                self._simulate_generation,
+                prompt,
+                task_type,
+                embeddings,
+                max_tokens,
+            )
+        except Exception as e:
+            logger.exception(f"❌ Text generation failed: {e}")
+            return "⚠️ Text generation failed due to an internal error."
+
+    def _simulate_generation(
+        self,
+        prompt: str,
+        task_type: str,
+        embeddings: Optional[List[float]],
+        max_tokens: int,
+    ) -> str:
+        """
+        Lightweight simulated model response (replace with actual inference engine later).
+        """
+        prompt_lower = prompt.lower()
+
+        if "optimize" in prompt_lower or "refactor" in prompt_lower:
+            return (
+                "✅ Suggested optimization:\n"
+                "Use vectorized NumPy operations instead of loops where possible. "
+                "Consider memoization or caching of repeated computations."
+            )
+
+        elif "bug" in prompt_lower or "error" in prompt_lower:
+            return (
+                "⚠️ Potential bug detected:\n"
+                "Review exception handling and variable scope. "
+                "Ensure all input parameters are validated before use."
+            )
+
+        elif "document" in prompt_lower or "explain" in prompt_lower:
+            return (
+                "🧠 Code explanation:\n"
+                "This component manages AI-assisted reasoning for pull requests, "
+                "documenting key logic paths and ensuring clarity in implementation."
+            )
+
+        else:
+            return (
+                f"🤖 General response from {self.model_name}:\n"
+                f"Processed request successfully with task type '{task_type}'."
+            )
