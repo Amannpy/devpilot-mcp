@@ -1,53 +1,38 @@
-# backend/core/utils/logger.py
 """
-Centralized logging utility for MCP backend.
-Provides rotating file and console loggers with consistent formatting.
+Central logging utility for MCP backend.
 """
 
 import logging
-from logging.handlers import RotatingFileHandler
-import sys
-import os
-from backend.core.utils.config import settings
+from pathlib import Path
 
+LOG_FORMAT = "%(asctime)s | %(levelname)s | %(message)s"
 
 def get_logger(name: str) -> logging.Logger:
-    """Return a configured logger instance."""
-    log_dir = settings.log_dir
-    os.makedirs(log_dir, exist_ok=True)
-
+    """
+    Returns a configured logger instance.
+    """
     logger = logging.getLogger(name)
-
     if not logger.handlers:
-        logger.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
+        logger.setLevel(logging.INFO)
 
-        # File handler (rotating)
-        file_handler = RotatingFileHandler(
-            os.path.join(log_dir, f"{name.replace('.', '_')}.log"),
-            maxBytes=5 * 1024 * 1024,  # 5 MB
-            backupCount=3,
-            encoding="utf-8"
-        )
-        file_formatter = logging.Formatter(
-            fmt="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
-        )
-        file_handler.setFormatter(file_formatter)
-
-        # Console handler
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_formatter = logging.Formatter(
-            fmt="%(asctime)s | %(levelname)s | %(message)s",
-            datefmt="%H:%M:%S"
-        )
-        console_handler.setFormatter(console_formatter)
-
-        logger.addHandler(file_handler)
+        # Basic console handler
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
         logger.addHandler(console_handler)
 
+        try:
+            # Lazy import to avoid circular dependency
+            from backend.core.utils.config import app_config
+            log_file = Path(app_config.LOGS_DIR) / "mcp_server.log"
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+
+            file_handler = logging.FileHandler(log_file, encoding="utf-8")
+            file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+            logger.addHandler(file_handler)
+        except Exception:
+            # Skip file handler if config not yet initialized
+            pass
+
+        logger.info("✅ Logger initialized successfully")
+
     return logger
-
-
-# Initialize root logger early
-root_logger = get_logger("backend")
-root_logger.info("✅ Logger initialized successfully")

@@ -16,13 +16,17 @@ logger = get_logger(__name__)
 class QwenModelWrapper:
     """
     Wrapper for Qwen model (local or remote).
-    Handles both embeddings and text generation tasks.
+    Handles embeddings and text generation tasks.
     """
 
     def __init__(self, model_name: str = "Qwen-2.5-7B-Instruct"):
         self.model_name = model_name
         self.is_local = True  # Future: auto-detect remote model availability
-        logger.info(f"✅ Initialized QwenModelWrapper for {self.model_name}")
+        self.embedding_dim = 256  # Set default embedding dimension
+        logger.info(
+            f"✅ Initialized QwenModelWrapper for {self.model_name} "
+            f"with embedding_dim={self.embedding_dim}"
+        )
 
     # ----------------------------------------------------
     # Embeddings
@@ -30,7 +34,6 @@ class QwenModelWrapper:
     async def get_embeddings(self, text: str) -> Optional[List[float]]:
         """
         Compute deterministic embeddings for a given text (mocked for MVP).
-        This simulates a consistent hash-based embedding space.
         """
         try:
             logger.debug(f"🔹 Generating embeddings for text: {text[:60]!r}...")
@@ -42,10 +45,12 @@ class QwenModelWrapper:
     def _compute_embeddings(self, text: str) -> List[float]:
         """
         CPU-bound embedding generation.
+        Pads or truncates to self.embedding_dim
         """
         hash_bytes = hashlib.sha256(text.encode("utf-8")).digest()
         vector = np.frombuffer(hash_bytes, dtype=np.uint8).astype(float)
-        normalized = vector[:256] / 255.0
+        normalized = np.zeros(self.embedding_dim, dtype=float)
+        normalized[:min(len(vector), self.embedding_dim)] = vector[:self.embedding_dim] / 255.0
         return normalized.tolist()
 
     # ----------------------------------------------------
@@ -60,16 +65,12 @@ class QwenModelWrapper:
     ) -> str:
         """
         Asynchronous text generation entrypoint.
-        Simulates LLM responses and integrates with prompt services.
+        Simulates LLM responses.
         """
         try:
             logger.info(f"🤖 Generating text [task={task_type}, tokens={max_tokens}]")
             return await asyncio.to_thread(
-                self._simulate_generation,
-                prompt,
-                task_type,
-                embeddings,
-                max_tokens,
+                self._simulate_generation, prompt, task_type, embeddings, max_tokens
             )
         except Exception as e:
             logger.exception(f"❌ Text generation failed: {e}")
