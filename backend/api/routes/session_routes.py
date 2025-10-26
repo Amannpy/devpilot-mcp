@@ -1,30 +1,38 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from backend.services.prompt_service import build_prompt, detect_intent
+"""
+Session-related API routes for MCP backend.
+"""
 
-router = APIRouter(prefix="/session", tags=["Session / Chat"])
+from fastapi import APIRouter, Depends
+from backend.services.session_service import SessionService
+
+router = APIRouter(prefix="/session", tags=["session"])
+
+# Singleton session service
+session_service = SessionService()
 
 
-class ChatRequest(BaseModel):
-    prompt: str
-    code: str | None = None
-    context: str | None = None
-
-
-@router.post("/chat")
-async def chat_with_model(payload: ChatRequest):
+@router.post("/start")
+async def start_session(user_id: str):
     """
-    Simulate a chat-like exchange where we intelligently build a prompt.
-    (Later this will interface with the model for reasoning-based responses.)
+    Start a new user session.
     """
-    try:
-        intent = detect_intent(payload.prompt)
-        smart_prompt = build_prompt(payload.prompt, payload.code, payload.context)
+    session_id = await session_service.create_session(user_id)
+    return {"session_id": session_id, "message": "Session started successfully"}
 
-        return {
-            "intent": intent.value,
-            "built_prompt": smart_prompt,
-            "message": "Prompt successfully constructed for model input."
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/history")
+async def add_to_history(session_id: str, message: str, role: str = "user"):
+    """
+    Add a message to session history.
+    """
+    await session_service.add_message(session_id, message, role)
+    return {"message": "Message added to session history"}
+
+
+@router.get("/history")
+async def get_history(session_id: str):
+    """
+    Retrieve full session history.
+    """
+    history = await session_service.get_history(session_id)
+    return {"session_id": session_id, "history": history}
