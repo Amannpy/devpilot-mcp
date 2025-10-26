@@ -4,16 +4,13 @@ Handles PR analysis, RAG queries, chat sessions, and prompt management.
 """
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.routes import pr_routes, rag_routes, session_routes
 from backend.core.utils.logger import get_logger
 from backend.config import API_TITLE, API_VERSION, DEBUG, HOST, PORT, LOGS_DIR
-from backend.services.pr_service import PRService
-from backend.services.rag_service import RAGService
-from backend.services.session_service import SessionService
-from backend.services.prompt_service import build_prompt
+from backend.core.mcp_server import MCPServer
 
 logger = get_logger(__name__)
 
@@ -34,20 +31,24 @@ app.add_middleware(
 )
 
 # -----------------------------
-# Instantiate core MCP services
+# Instantiate MCPServer singleton
 # -----------------------------
-logger.info("Initializing MCP Server services...")
-pr_service = PRService()
-rag_service = RAGService()
-session_service = SessionService()
-logger.info("✅ MCP services initialized successfully")
+logger.info("Initializing MCPServer instance...")
+mcp_server = MCPServer()
+logger.info("✅ MCPServer initialized successfully")
 
 # -----------------------------
-# Include API routes
+# Dependency for injecting MCPServer
 # -----------------------------
-app.include_router(pr_routes.router, prefix="/pr", tags=["PR"])
-app.include_router(rag_routes.router, prefix="/rag", tags=["RAG"])
-app.include_router(session_routes.router, prefix="/session", tags=["Session"])
+def get_mcp_server() -> MCPServer:
+    return mcp_server
+
+# -----------------------------
+# Include API routes with dependency injection
+# -----------------------------
+app.include_router(pr_routes.router, prefix="/pr", tags=["PR"], dependencies=[Depends(get_mcp_server)])
+app.include_router(rag_routes.router, prefix="/rag", tags=["RAG"], dependencies=[Depends(get_mcp_server)])
+app.include_router(session_routes.router, prefix="/session", tags=["Session"], dependencies=[Depends(get_mcp_server)])
 
 # -----------------------------
 # Root endpoint
