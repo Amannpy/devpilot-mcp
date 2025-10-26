@@ -1,71 +1,74 @@
 """
-Service layer for managing chat sessions and history.
-Handles session creation, message logging, and retrieval.
+Session management API routes for the MCP backend.
+Handles creation, message history tracking, and retrieval of chat sessions.
 """
 
-import uuid
-from typing import Dict, List, Any
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel, Field
+from backend.core.mcp_server import MCPServer
 from backend.core.utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-# In-memory session storage for MVP
-_sessions: Dict[str, List[Dict[str, Any]]] = {}
+router = APIRouter(prefix="/session", tags=["Session"])
 
 
-class SessionService:
-    """Service managing user chat sessions and history."""
+# ----------------------------
+# Pydantic Schemas
+# ----------------------------
+class StartSessionRequest(BaseModel):
+    user_id: str = Field(..., description="Unique identifier of the user starting the session")
 
-    async def create_session(self, user_id: str) -> str:
-        """
-        Create a new session for a given user.
 
-        Args:
-            user_id (str): Unique identifier of the user.
+class AddMessageRequest(BaseModel):
+    session_id: str = Field(..., description="Session ID to which the message belongs")
+    message: str = Field(..., description="Message text to append to history")
+    role: str = Field("user", description="Role of the message sender (e.g., user, system, assistant)")
 
-        Returns:
-            str: Session ID.
-        """
-        session_id = str(uuid.uuid4())
-        _sessions[session_id] = []
-        logger.info(f"🟢 Created new session {session_id} for user {user_id}")
-        return session_id
 
-    async def add_message(self, session_id: str, message: str, role: str = "user"):
-        """
-        Add a message to a session's history.
+# ----------------------------
+# Routes
+# ----------------------------
+@router.post("/start")
+async def start_session(request: StartSessionRequest, mcp_server: MCPServer = Depends()):
+    """
+    Start a new chat session for a user.
+    """
+    try:
+        logger.info(f"🟢 Starting new session for user_id={request.user_id}")
+        session_id = await mcp_server.start_session(request.user_id)
+        return {"status": "success", "session_id": session_id, "message": "Session started successfully"}
+    except Exception as e:
+        logger.exception(f"❌ Failed to start session for user {request.user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to start session")
 
-        Args:
-            session_id (str): Session ID.
-            message (str): Message content.
-            role (str): Role of sender (user/system/assistant). Defaults to 'user'.
 
-        Raises:
-            ValueError: If the session ID does not exist.
-        """
-        if session_id not in _sessions:
-            logger.warning(f"❌ Attempt to add message to non-existent session {session_id}")
-            raise ValueError(f"Session ID {session_id} not found")
+@router.post("/history")
+async def add_to_history(request: AddMessageRequest, mcp_server: MCPServer = Depends()):
+    """
+    Add a message to an existing session’s history.
+    """
+    try:
+        logger.info(f"🗨️ Adding message to session {request.session_id} by role={request.role}")
+        await mcp_server.add_message_to_session(request.session_id, request.message, request.role)
+        return {"status": "success", "message": "Message added to session history"}
+    except Exception as e:
+        logger.exception(f"❌ Failed to add message to session {request.session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add message to history")
 
-        _sessions[session_id].append({"role": role, "message": message})
-        logger.debug(f"🗨️ Added message to session {session_id} by role={role}")
 
-    async def get_history(self, session_id: str) -> List[Dict[str, Any]]:
-        """
-        Retrieve the full message history for a session.
-
-        Args:
-            session_id (str): Session ID.
-
-        Returns:
-            List[Dict[str, Any]]: Ordered list of messages (role + message).
-
-        Raises:
-            ValueError: If the session ID does not exist.
-        """
-        if session_id not in _sessions:
-            logger.warning(f"❌ Attempt to fetch history for non-existent session {session_id}")
-            raise ValueError(f"Session ID {session_id} not found")
-
-        logger.info(f"📜 Retrieved history for session {session_id}")
-        return _sessions[session_id]
+@router.get("/history")
+async def get_history(session_id: str, mcp_server: MCPServer = Depends()):
+    """
+    Retrieve the full chat history for a given session.
+    """
+    try:
+        logger.info(f"📜 Fetching chat history for session_id={session_id}")
+        history = await mcp_server.get_session_history(session_id)
+        if history is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return {"status": "success", "session_id": session_id, "history": history}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"❌ Failed to fetch session history for {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve session history")
