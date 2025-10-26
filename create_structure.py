@@ -71,7 +71,7 @@ def create_structure():
 
         # Tests
         "tests/__init__.py",
-        "tests/test_rag.py",
+        "tests/test_rag_service.py",
         "tests/test_pr_service.py",
         "tests/test_prompt_service.py",
 
