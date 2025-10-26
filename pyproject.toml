@@ -1,0 +1,25 @@
+[project]
+name = "mcp-ai-server"
+version = "0.1.0"
+description = "A modular AI backend integrating RAG, code analysis, and PR documentation intelligence."
+authors = [{ name = "Your Name", email = "you@example.com" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "faiss-cpu",
+    "python-dotenv",
+    "openai",
+    "tiktoken",
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "PyPDF2",
+    "requests",
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
